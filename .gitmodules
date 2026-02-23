@@ -1,0 +1,3 @@
+[submodule "PyTorchHessianFree"]
+	path = PyTorchHessianFree
+	url = git@github.com:ltatzel/PyTorchHessianFree.git
