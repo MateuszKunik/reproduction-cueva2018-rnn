@@ -27,6 +27,12 @@ class RodentMotionModel:
         else:
             self.speed = 0.0
 
+    def _sample_speed_fast(self):
+        self.speed = self.rng.beta(2,  1) * self.v_max
+
+    def can_move(self):
+      return self.rng.random() < self.p_move
+
     def propose_step(self):
         self._sample_theta()
         self._sample_speed()
@@ -35,9 +41,18 @@ class RodentMotionModel:
         dy = self.speed * np.sin(self.theta)
 
         return dx, dy, self.theta, self.speed
+
+    def propose_step_fast(self):
+        self._sample_theta()
+        self._sample_speed_fast()
+
+        dx = self.speed * np.cos(self.theta)
+        dy = self.speed * np.sin(self.theta)
+
+        return dx, dy, self.theta, self.speed
     
 
-class Arena(ABC):
+class Arena(ABC): #TODO: not need abstracts?
     @abstractmethod
     def contains(self, x, y):
         pass
@@ -61,14 +76,10 @@ class SquareArena(Arena):
     def contains(self, x, y):
         # (x >= -hs) & (x <= hs) & (y >= -hs) & (y <= hs)
         return (
-            x >= - (self._half_size + self.eps)
-            ) & (
-                x <= self._half_size + self.eps
-                ) & (
-                    y >= - (self._half_size + self.eps)
-                    ) & (
-                        y <= self._half_size + self.eps
-                        )
+           ( (self._half_size + self.eps) >= x >= - (self._half_size + self.eps) ) & (
+               (self._half_size + self.eps) >= y >= - (self._half_size + self.eps)
+           )
+        )
     
     def center(self):
         return 0.0, 0.0
@@ -129,6 +140,53 @@ class SimulationController:
 
         return self._record_step()
 
+    def step_fast(self):
+        x0, y0 = self.rodent.x, self.rodent.y
+
+        if self.rodent.can_move():
+          for _ in range(self.max_tries):
+            dx, dy, theta_candidate, speed_candidate = self.rodent.propose_step_fast()
+            x_candidate = x0 + dx
+            y_candidate = y0 + dy
+
+            if self.arena.contains(x_candidate, y_candidate):
+                x1, y1 = x_candidate, y_candidate
+                theta, speed = theta_candidate, speed_candidate
+                break
+
+            x_candidate = x0 - dx #switching angle we always move away from the wall
+            y_candidate = y0 + dy
+            if self.arena.contains(x_candidate, y_candidate):
+                x1, y1 = x_candidate, y_candidate
+                theta_candidate = np.atan2(dy,-dx)
+                theta, speed = theta_candidate, speed_candidate
+                break
+
+            x_candidate = x0 - dx
+            y_candidate = y0 - dy
+            if self.arena.contains(x_candidate, y_candidate):
+                x1, y1 = x_candidate, y_candidate
+                theta_candidate = np.atan2(-dy,-dx)
+                theta, speed = theta_candidate, speed_candidate
+                break
+
+            x_candidate = x0 + dx
+            y_candidate = y0 - dy
+            if self.arena.contains(x_candidate, y_candidate):
+                x1, y1 = x_candidate, y_candidate
+                theta_candidate = np.atan2(-dy,dx)
+                theta, speed = theta_candidate, speed_candidate
+                break
+
+        else:
+            x1, y1 = x0, y0
+            theta = self.rodent.theta
+            speed = 0.0
+
+        self._apply_step(x1, y1, theta, speed)
+
+        return self._record_step()
+
     def generate(self, num_steps):
         self.reset()
         self._record_step()
@@ -136,4 +194,13 @@ class SimulationController:
         for _ in range(1, num_steps):
             self.step()
         
+        return self.data
+
+    def generate_fast(self, num_steps):
+        self.reset()
+        self._record_step()
+
+        for _ in range(1, num_steps):
+            self.step_fast()
+
         return self.data

@@ -57,12 +57,67 @@ def generate_dataset(controller, num_samples, num_steps, num_inputs, num_outputs
         )
 
     inputs, targets = np.split(trajectories, indices_or_sections=2, axis=num_inputs)
+
+    inputs = torch.from_numpy(inputs).float()
+    targets = torch.from_numpy(targets).float()
+
+    return inputs, targets
+
+def generate_dataset_fast(controller, num_samples, num_steps, num_inputs, num_outputs):
+    trajectories = np.empty(
+        (num_samples, num_steps, num_inputs + num_outputs),
+        dtype=float,
+    )
+
+    for sample_id in range(num_samples):
+        trajectory = controller.generate_fast(num_steps)
+
+        #TODO: islice performance?
+        trajectories[sample_id] = np.asarray(
+            [tuple(islice(step.values(), 1, None)) for step in trajectory],
+            dtype=float,
+        )
+
+    inputs, targets = np.split(trajectories, indices_or_sections=2, axis=num_inputs)
     
     inputs = torch.from_numpy(inputs).float()
     targets = torch.from_numpy(targets).float()
 
     return inputs, targets
 
+
+def generate_dataset_fast_old(controller,
+                          num_samples,
+                          num_steps,
+                          num_inputs,
+                          num_outputs,
+                          device):
+
+    traj = torch.empty(
+        num_samples,
+        num_steps,
+        num_inputs + num_outputs,
+        dtype=torch.float32,
+        device=device,
+    )#.detach()
+
+    # temporary CPU buffer for simulation
+    buf = np.empty((num_steps, num_inputs + num_outputs),
+                   dtype=np.float32)
+
+    for s in range(num_samples):
+        controller.generate_array(num_steps, buf)
+
+        traj[s].copy_(torch.from_numpy(buf),
+                      non_blocking=True) #kolejna nieblokująca, można jeszcze próbować przez zrównoleglenie tego na procesorze
+
+    inputs, targets = torch.split(
+        traj,
+        [num_inputs, num_outputs],
+        dim=2
+    )
+
+    return inputs, targets
 
 def compute_spatial_axis_bounds(arena_center, arena_size):
     half_size = arena_size / 2.0
